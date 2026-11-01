@@ -78,20 +78,23 @@ Repeating the list products call should now show the new item.
 
 ## Azure Setup
 
-> **Terraform alternative:** the resources below can also be provisioned with Terraform. See [infra/README.md](infra/README.md).
+All Azure infrastructure is provisioned with Terraform, from the [infra/](infra/) folder. See [infra/README.md](infra/README.md) for the full list of resources and the free-tier cost notes.
+
+### Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) 1.6 or later
+- Azure CLI (Terraform uses its sign-in)
+- Azure Functions Core Tools (`func`), installed as a dev dependency by `npm install`
 
 ### Sign into Azure CLI
 
-Prepare for using the az CLI commands.
-
-1. Ensure you are signed in:
+1. Ensure you are signed in, and point Terraform at your subscription:
 
 ```bash
 az login
 az account show
+export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ```
-
-You should see your account properties displayed if you are successfully signed in.
 
 2. Ensure you know which locations (e.g. uksouth) you are permitted to use:
 
@@ -101,74 +104,75 @@ az policy assignment list \
   -o tsv
 ```
 
-### Create a Resource Group and Azure Function App
+### Configure the deployment
 
-1. Create a resource group (if you do not already have one for this deployment):
-
-```bash
-az group create \
-  --name <your-resource-group> \
-  --location <permitted-location>
-```
-
-Remember to follow our naming convention, e.g. shopping-lab-ab47-rg
-
-2. Create a storage account (required for Azure Functions):
+Create your variables file from the template:
 
 ```bash
-az storage account create \
-  --name <yourfuncstorageaccount> \
-  --location <permitted-location> \
-  --resource-group <your-resource-group> \
-  --sku Standard_LRS
+cp infra/terraform.tfvars.example infra/terraform.tfvars
 ```
 
-3. Create the Function App:
+Edit `infra/terraform.tfvars`:
+
+- `location`: one of your permitted locations. Choose it before the first `apply`: changing it later destroys and recreates every resource.
+- `cors_allowed_origins`: origins allowed to call the API, e.g. `["http://localhost:5173"]`.
+- `oauth2_*`: see [OAuth2 Access Tokens](#oauth2-access-tokens).
+- `product_updated_*`: see [Product Updated Notifications](#product-updated-notifications).
+
+> **Note:** `terraform.tfvars` is git-ignored because it can contain secrets. Never commit it.
+
+Resource names are generated with a random 6-character suffix, so they follow our naming convention and are globally unique:
+
+- `shopping-lab-<suffix>-rg`
+- `shoppinglab<suffix>funcsa`
+- `products-lab-<suffix>-func`
+
+### Create the infrastructure
 
 ```bash
-az functionapp create \
-  --name <your-function-app> \
-  --resource-group <your-resource-group> \
-  --storage-account <yourfuncstorageaccount> \
-  --consumption-plan-location <permitted-location> \
-  --runtime node \
-  --functions-version 4
+terraform -chdir=infra init
+terraform -chdir=infra plan
+terraform -chdir=infra apply
 ```
+
+This creates the resource group, storage account, Flex Consumption plan, Function App (Node.js, Functions v4) and Application Insights. It also applies the CORS and app settings from `terraform.tfvars`.
+
+> **Important:** the Terraform state (`infra/terraform.tfstate`) records what was created. Keep it, as Terraform needs it to update or destroy the resources.
 
 ### Publish the Project to Azure
 
-Deploy your code to the Function App:
+Build and deploy your code to the Function App:
 
 ```bash
-func azure functionapp publish <your-function-app>
+npm run build
+func azure functionapp publish $(terraform -chdir=infra output -raw function_app_name)
 ```
 
 You can now access your endpoints at:
 
-```
-https://<your-function-app>.azurewebsites.net/api/products
-```
-
-If needed, allow cross-domain calls from your app domain and/or localhost, for example:
-
 ```bash
-az functionapp cors add \
-  --name <your-function-app> \
-  --resource-group <your-resource-group> \
-  --allowed-origins http://localhost:5173
+terraform -chdir=infra output products_url
 ```
 
 ### Read the host auth key
 
 ```bash
-az functionapp keys list \
-  --name <your-function-app> \
-  --resource-group <your-resource-group> \
-  --query masterKey \
-  --output tsv
+terraform -chdir=infra output -raw master_key
 ```
 
-This key will need to be shared with any backend service that needs to call `upsertProduct`. Calls to `upsertProduct` must include the key in the `x-functions-key` HTTP header. It is also possible to acquire a key that just works for `upsertProduct` (rather than for the whole service).
+This key will need to be shared with any backend service that needs to call `upsertProduct`. Calls to `upsertProduct` must include the key in the `x-functions-key` HTTP header. A narrower key is also available with `terraform -chdir=infra output -raw default_function_key`.
+
+### Change configuration
+
+To change any setting (CORS, OAuth2, notifications), edit `infra/terraform.tfvars` and run `terraform -chdir=infra apply` again. Azure restarts the Function App automatically when its app settings change.
+
+Avoid changing settings with `az functionapp config appsettings set` or in the portal: the next `terraform apply` overwrites them.
+
+### Tear down
+
+```bash
+terraform -chdir=infra destroy
+```
 
 ## Product Updated Notifications
 
@@ -212,26 +216,18 @@ Remove `PRODUCT_UPDATED_BASE_URL` (or leave it empty) to fall back to the dummy 
 
 ### Configure in Azure
 
-Set the application setting `PRODUCT_UPDATED_BASE_URL` on your Function App to the receiver's base URL. If your receiver requires a host key, also set `PRODUCT_UPDATED_KEY`. The app will automatically switch to the HTTP adapter at startup.
+Set `product_updated_base_url` in `infra/terraform.tfvars` to the receiver's base URL. If your receiver requires a host key, also set `product_updated_key`. Then apply:
 
-You can set this via Azure CLI:
-
-```bash
-az functionapp config appsettings set \
-  --name <your-function-app> \
-  --resource-group <your-resource-group> \
-  --settings \
-    PRODUCT_UPDATED_BASE_URL=https://your-receiver.azurewebsites.net \
-    PRODUCT_UPDATED_KEY=<your-host-key>
+```hcl
+product_updated_base_url = "https://your-receiver.azurewebsites.net"
+product_updated_key      = "<your-host-key>"
 ```
 
-If needed, restart the Function App to pick up changes immediately:
-
 ```bash
-az functionapp restart \
-  --name <your-function-app> \
-  --resource-group <your-resource-group>
+terraform -chdir=infra apply
 ```
+
+The app will automatically switch to the HTTP adapter at startup. Leave both values empty to use the dummy logger.
 
 ## Auth0 Setup
 
@@ -350,16 +346,16 @@ Update `local.settings.json`:
 
 ### Azure Configuration
 
-Set the OAuth2 configuration via Azure CLI:
+Set the OAuth2 values in `infra/terraform.tfvars` and apply:
+
+```hcl
+oauth2_jwks_uri = "https://your-tenant.auth0.com/.well-known/jwks.json"
+oauth2_issuer   = "https://your-tenant.auth0.com/"
+oauth2_audience = "https://products.shopping.thamco.com"
+```
 
 ```bash
-az functionapp config appsettings set \
-  --name <your-function-app> \
-  --resource-group <your-resource-group> \
-  --settings \
-    OAUTH2_JWKS_URI=https://your-tenant.auth0.com/.well-known/jwks.json \
-    OAUTH2_ISSUER=https://your-tenant.auth0.com/ \
-    OAUTH2_AUDIENCE=https://products.shopping.thamco.com
+terraform -chdir=infra apply
 ```
 
 ### Testing with a Token

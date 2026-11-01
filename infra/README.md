@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-Terraform equivalent of the `az` commands in the main README's **Azure Setup** section. It creates:
+Terraform configuration for the Azure deployment. The step-by-step usage is in the main README's **Azure Setup** section. It creates:
 
 - Resource group
 - Storage account (required by Azure Functions)
