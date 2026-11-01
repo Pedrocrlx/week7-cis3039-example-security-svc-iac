@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+
+location             = "uksouth"
+
+cors_allowed_origins = ["http://localhost:5173"]
+
+# OAuth2 (see Auth0 Setup in the main README). Leave empty to redact all prices.
+oauth2_jwks_uri = "https://your-tenant.uk.auth0.com/.well-known/jwks.json"
+oauth2_issuer   = "https://your-tenant.uk.auth0.com/"
+oauth2_audience = "https://products.shopping.thamco.com"
+
+# Product-updated notifications. Leave empty to use the dummy console logger.
+product_updated_base_url = ""
+product_updated_key      = ""
+
+# Optional: deploy a pre-built zip instead of using `func azure functionapp publish`.
+# app_package_path = "../app.zip"

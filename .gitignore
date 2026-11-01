@@ -46,3 +46,11 @@ __pycache__/
 __blobstorage__
 __queuestorage__
 __azurite_db*__.json
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+app.zip

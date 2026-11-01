@@ -78,6 +78,8 @@ Repeating the list products call should now show the new item.
 
 ## Azure Setup
 
+> **Terraform alternative:** the resources below can also be provisioned with Terraform. See [infra/README.md](infra/README.md).
+
 ### Sign into Azure CLI
 
 Prepare for using the az CLI commands.
