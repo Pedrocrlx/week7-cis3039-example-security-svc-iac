@@ -1,6 +1,6 @@
 # Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
 
-location             = "uksouth"
+location             = "spaincentral"
 
 cors_allowed_origins = ["http://localhost:5173"]
 

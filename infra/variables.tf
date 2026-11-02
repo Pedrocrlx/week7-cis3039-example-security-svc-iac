@@ -1,13 +1,13 @@
 variable "subscription_id" {
   description = "Azure subscription ID. Leave null to use ARM_SUBSCRIPTION_ID."
   type        = string
-  default     = null
+  default     = "47d206dc-93f7-4dc0-993d-3262f9b2e18d"
 }
 
 variable "location" {
   description = "Azure region (must be one of your permitted locations, e.g. uksouth)."
   type        = string
-  default     = "uksouth"
+  default     = "germanywestcentral"
 }
 
 variable "node_version" {
